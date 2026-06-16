@@ -1,5 +1,4 @@
-// raidhelper-parser.js - Final Version
-// Bereinigt Discord Custom Emojis aus Raidhelper-Embeds
+// raidhelper-parser.js - Final Clean Version
 
 const CLASS_MAP = {
   'tank':'Tank', 'warrior':'Krieger', 'paladin':'Paladin',
@@ -26,160 +25,149 @@ const ROLE_MAP = {
   'ranged':'Ranged DPS', 'melee':'Melee DPS',
 };
 
-// Raidhelper Custom Emoji Namen → Klasse
 const EMOJI_CLASS_MAP = {
   'warrior':'Krieger',   'paladin':'Paladin',   'hunter':'Jäger',
   'rogue':'Schurke',     'priest':'Priester',   'shaman':'Schamane',
   'mage':'Magier',       'warlock':'Hexenmeister', 'druid':'Druide',
   'deathknight':'Todesritter', 'dk':'Todesritter',
-  // Spec-spezifische Emojis
-  'protection':'Tank',   'prot':'Tank',
-  'holy':'Heal',         'resto':'Heal',        'restoration':'Heal',
-  'discipline':'Heal',   'disc':'Heal',
-  'shadow':'Ranged DPS', 'balance':'Ranged DPS','boomkin':'Ranged DPS',
-  'elemental':'Ranged DPS', 'ele':'Ranged DPS',
-  'enhancement':'Melee DPS', 'enh':'Melee DPS',
-  'feral':'Melee DPS',   'fury':'Melee DPS',    'arms':'Melee DPS',
-  'combat':'Melee DPS',  'assassination':'Melee DPS', 'subtlety':'Melee DPS',
-  'marksmanship':'Ranged DPS', 'mm':'Ranged DPS',
-  'beastmastery':'Ranged DPS', 'survival':'Ranged DPS',
-  'fire':'Ranged DPS',   'frost':'Ranged DPS',  'arcane':'Ranged DPS',
-  'affliction':'Ranged DPS', 'destruction':'Ranged DPS', 'demonology':'Ranged DPS',
-  'retribution':'Melee DPS', 'ret':'Melee DPS',
-  'unholy':'Melee DPS',  'blooddk':'Melee DPS',
 };
 
-function stripDiscordEmojis(text) {
-  // Custom Discord Emojis entfernen: <:name:id> und <a:name:id>
-  return text.replace(/<a?:[a-zA-Z0-9_]+:\d+>/g, '').trim();
+const EMOJI_ROLE_MAP = {
+  'protection':'Tank', 'prot':'Tank',
+  'holy':'Heal', 'resto':'Heal', 'restoration':'Heal', 'discipline':'Heal', 'disc':'Heal',
+  'shadow':'Ranged DPS', 'balance':'Ranged DPS', 'elemental':'Ranged DPS',
+  'enhancement':'Melee DPS', 'feral':'Melee DPS',
+  'fury':'Melee DPS', 'arms':'Melee DPS', 'combat':'Melee DPS',
+  'assassination':'Melee DPS', 'subtlety':'Melee DPS',
+  'marksmanship':'Ranged DPS', 'beastmastery':'Ranged DPS', 'survival':'Ranged DPS',
+  'fire':'Ranged DPS', 'frost':'Ranged DPS', 'arcane':'Ranged DPS',
+  'affliction':'Ranged DPS', 'destruction':'Ranged DPS', 'demonology':'Ranged DPS',
+  'retribution':'Melee DPS', 'ret':'Melee DPS',
+  'unholy':'Melee DPS',
+};
+
+// Zeilen die keine Spieler sind (Header/Footer/Info)
+const SKIP_PATTERNS = [
+  /^melee\s*\*?\*?\d+/i,
+  /^ranged\s*\*?\*?\d+/i,
+  /^healer\s*\*?\*?\d+/i,
+  /^healers\s*\*?\*?\d+/i,
+  /^tank\s*\*?\*?\d+/i,
+  /^web\s*view/i,
+  /^\[comp\]/i,
+  /^https?:\/\//,
+  /^\d+\s*\(\+\d+\)/,  // "26 (+1)" = Gesamtanzahl
+  /^<#\d+>/,           // Discord Channel-Mentions
+];
+
+function stripAll(text) {
+  let s = text;
+  // Custom Discord Emojis: <:name:id> und <a:name:id>
+  s = s.replace(/<a?:[a-zA-Z0-9_]+:\d+>/g, '');
+  // Discord Mentions
+  s = s.replace(/<@!?\d+>/g, '');
+  s = s.replace(/<#\d+>/g, '');
+  // Markdown Bold/Italic
+  s = s.replace(/\*\*/g, '').replace(/\*/g, '').replace(/__/g, '').replace(/_/g, '');
+  // Backticks
+  s = s.replace(/`/g, '');
+  // Unicode Emojis
+  s = s.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F000}-\u{1F02F}]/gu, '');
+  // Häkchen / Kreuze
+  s = s.replace(/[✅✔☑✓❌✗]/gu, '');
+  // Mehrfache Leerzeichen
+  s = s.replace(/\s+/g, ' ').trim();
+  return s;
 }
 
-function extractEmojiInfo(text) {
-  // Klassen-Info aus Custom Emoji-Namen extrahieren
-  const matches = text.match(/<a?:([a-zA-Z0-9_]+):\d+>/g) || [];
+function extractEmojiInfo(rawLine) {
+  const matches = rawLine.match(/<a?:([a-zA-Z0-9_]+):\d+>/g) || [];
   let klass = '', role = '';
   for (const emoji of matches) {
-    const nameMatch = emoji.match(/<a?:([a-zA-Z0-9_]+):\d+>/);
-    if (!nameMatch) continue;
-    const emojiName = nameMatch[1].toLowerCase();
-    // Klassen-Emoji erkennen
+    const m = emoji.match(/<a?:([a-zA-Z0-9_]+):\d+>/);
+    if (!m) continue;
+    const name = m[1].toLowerCase();
     for (const [key, val] of Object.entries(EMOJI_CLASS_MAP)) {
-      if (emojiName.includes(key)) {
-        if (CLASS_MAP[val.toLowerCase()] || Object.values(CLASS_MAP).includes(val)) {
-          klass = val;
-        }
-        if (ROLE_MAP[key]) role = ROLE_MAP[key];
-        break;
-      }
+      if (name.includes(key)) { klass = val; break; }
+    }
+    for (const [key, val] of Object.entries(EMOJI_ROLE_MAP)) {
+      if (name.includes(key)) { role = val; break; }
     }
   }
   return { klass, role };
 }
 
-function cleanPlayerName(text) {
-  // Custom Discord Emojis entfernen
-  let name = stripDiscordEmojis(text);
-  // Nummer am Anfang entfernen
-  name = name.replace(/^\d+\s+/, '').trim();
-  // Discord Mentions entfernen
-  name = name.replace(/<@!?\d+>/g, '').trim();
-  // Häkchen und Status-Symbole entfernen
-  name = name.replace(/^[✅✔☑✓\-–—]\s*/u, '').trim();
-  // Unicode Emojis entfernen
-  name = name.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
+function cleanName(raw) {
+  let s = stripAll(raw);
+  // Nummer am Anfang entfernen: "8 Thryne" → "Thryne"
+  s = s.replace(/^\d+\s+/, '').trim();
+  // Backtick-Nummer: "`8`" am Anfang
+  s = s.replace(/^`?\d+`?\s+/, '').trim();
   // Sonderzeichen am Anfang
-  name = name.replace(/^[^a-zA-ZäöüÄÖÜß0-9]+/, '').trim();
-  // Mehrfache Leerzeichen
-  name = name.replace(/\s+/g, ' ').trim();
-  return name;
+  s = s.replace(/^[^a-zA-ZäöüÄÖÜß0-9]+/, '').trim();
+  return s;
 }
 
-function isConfirmedLine(line) {
-  return /^[✅✔☑✓]/u.test(line.trim());
+function isConfirmedLine(raw) {
+  return /✅|✔|☑|✓/.test(raw);
 }
 
-function isEmptySlot(line) {
-  const clean = stripDiscordEmojis(line).trim();
-  return clean === '' || clean === '-' || clean === '–' || clean === '—' ||
-         /^-+$/.test(clean) || clean.toLowerCase() === 'empty';
+function isSkippableLine(raw) {
+  const clean = stripAll(raw).trim();
+  if (!clean || clean === '-' || clean === '–' || clean === '—') return true;
+  if (clean.toLowerCase() === 'empty') return true;
+  return SKIP_PATTERNS.some(p => p.test(clean));
 }
 
-function isTentativeOrAbsence(fieldName) {
-  const lower = fieldName.toLowerCase();
+function isTentativeOrAbsence(name) {
+  const lower = name.toLowerCase();
   return lower.includes('tentative') || lower.includes('absence') ||
          lower.includes('bench')     || lower.includes('absent')  ||
          lower.includes('late');
 }
 
-function getClassFromFieldName(fieldName) {
-  const clean = stripDiscordEmojis(fieldName);
-  const lower = clean.toLowerCase().replace(/[^a-zäöü\s]/gi, '').trim();
-  const key = lower.replace(/\s+/g, '');
-  return CLASS_MAP[key] || CLASS_MAP[lower] || '';
+function getClassFromField(fieldName) {
+  const clean = stripAll(fieldName).toLowerCase().replace(/[^a-zäöü]/gi, '');
+  return CLASS_MAP[clean] || '';
 }
 
-function getRoleFromFieldName(fieldName) {
-  const clean = stripDiscordEmojis(fieldName);
-  const lower = clean.toLowerCase().replace(/[^a-zäöü\s]/gi, '').trim();
-  const key = lower.replace(/\s+/g, '');
-  return ROLE_MAP[key] || ROLE_MAP[lower] || '';
+function getRoleFromField(fieldName) {
+  const clean = stripAll(fieldName).toLowerCase().replace(/[^a-zäöü]/gi, '');
+  return ROLE_MAP[clean] || '';
 }
 
 function isGroupFormat(fields) {
-  return fields.some(f => /group\s*\d+/i.test(stripDiscordEmojis(f.name || '')));
+  return fields.some(f => /group\s*\d+/i.test(stripAll(f.name || '')));
 }
 
-function parseGroupFormat(fields) {
+function parseFields(fields, onlyConfirmed) {
   const signups = [];
   for (const field of fields) {
-    if (isTentativeOrAbsence(field.name || '')) continue;
+    const fieldName = field.name || '';
+    if (isTentativeOrAbsence(stripAll(fieldName))) continue;
+
+    const klass = getClassFromField(fieldName);
+    const role  = getRoleFromField(fieldName);
     const lines = (field.value || '').split('\n').map(l => l.trim()).filter(Boolean);
-    const hasConfirm = lines.some(l => isConfirmedLine(l));
 
     for (const line of lines) {
-      if (isEmptySlot(line)) continue;
-      if (hasConfirm && !isConfirmedLine(line)) {
-        console.log(`[Parser] Skip (nicht ✅): ${stripDiscordEmojis(line).trim()}`);
-        continue;
-      }
-      const { klass, role } = extractEmojiInfo(line);
-      const name = cleanPlayerName(line);
+      if (isSkippableLine(line)) continue;
+      if (onlyConfirmed && !isConfirmedLine(line)) continue;
+
+      const { klass: emojiKlass, role: emojiRole } = extractEmojiInfo(line);
+      const name = cleanName(line);
+
       if (!name || name.length < 2) continue;
-      signups.push({ name, class: klass, spec: '', role });
-    }
-  }
-  return signups;
-}
+      // Nochmals prüfen ob der bereinigte Name ein Skip-Pattern matcht
+      if (isSkippableLine(name)) continue;
+      // Reine Zahlen überspringen
+      if (/^\d+$/.test(name)) continue;
 
-function parseClassFormat(fields) {
-  const signups = [];
-  for (const field of fields) {
-    if (isTentativeOrAbsence(field.name || '')) continue;
-    const fieldValue = (field.value || '').trim();
-    if (!fieldValue) continue;
-
-    const klass = getClassFromFieldName(field.name || '');
-    const role  = getRoleFromFieldName(field.name || '');
-    const lines = fieldValue.split('\n').map(l => l.trim()).filter(Boolean);
-    const hasConfirm = lines.some(l => isConfirmedLine(l));
-
-    for (const line of lines) {
-      if (isEmptySlot(line)) continue;
-      if (hasConfirm && !isConfirmedLine(line)) {
-        console.log(`[Parser] Skip (nicht ✅): ${stripDiscordEmojis(line).trim()}`);
-        continue;
-      }
-      const emojiInfo = extractEmojiInfo(line);
-      const name = cleanPlayerName(line);
-      if (!name || name.length < 2) continue;
-      let spec = '';
-      const specMatch = line.match(/\(([^)]+)\)/);
-      if (specMatch) spec = specMatch[1].trim();
       signups.push({
         name,
-        class: klass || emojiInfo.klass,
-        spec,
-        role:  role  || emojiInfo.role,
+        class: klass || emojiKlass,
+        spec:  '',
+        role:  role  || emojiRole,
       });
     }
   }
@@ -187,39 +175,42 @@ function parseClassFormat(fields) {
 }
 
 function parseRaidhelperEmbed(message) {
-  if (!message.embeds || message.embeds.length === 0) return null;
+  if (!message.embeds?.length) return null;
   const embed = message.embeds[0];
   if (!embed) return null;
 
   const result = {
     eventId: message.id,
-    title:   stripDiscordEmojis(embed.title || embed.description?.split('\n')[0] || 'Raid Event'),
+    title:   stripAll(embed.title || embed.description?.split('\n')[0] || 'Raid Event'),
     signups: [],
   };
 
-  if (embed.fields && embed.fields.length > 0) {
-    if (isGroupFormat(embed.fields)) {
-      console.log('[Parser] Format: Gruppen (Group 1, Group 2...)');
-      result.signups = parseGroupFormat(embed.fields);
+  if (embed.fields?.length > 0) {
+    const fields = embed.fields;
+    // Prüfen ob confirmed-Marker vorhanden sind
+    const hasConfirm = fields.some(f =>
+      (f.value || '').split('\n').some(l => isConfirmedLine(l))
+    );
+
+    if (isGroupFormat(fields)) {
+      console.log('[Parser] Format: Gruppen');
+      result.signups = parseFields(fields, hasConfirm);
     } else {
-      console.log('[Parser] Format: Klassen (Tank, Warrior...)');
-      result.signups = parseClassFormat(embed.fields);
+      console.log('[Parser] Format: Klassen');
+      result.signups = parseFields(fields, hasConfirm);
     }
   }
 
-  // Fallback: Description
-  if (result.signups.length === 0 && embed.description) {
-    const lines = embed.description.split('\n');
-    for (const line of lines) {
-      if (isEmptySlot(line)) continue;
-      const name = cleanPlayerName(line);
-      if (name && name.length >= 2 && !name.startsWith('http')) {
-        result.signups.push({ name, class: '', spec: '', role: '' });
-      }
-    }
-  }
+  // Duplikate entfernen
+  const seen = new Set();
+  result.signups = result.signups.filter(s => {
+    const key = s.name.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 
-  console.log(`[Parser] ${result.signups.length} Spieler (confirmed) für "${result.title}"`);
+  console.log(`[Parser] ${result.signups.length} Spieler für "${result.title}"`);
   result.signups.forEach(s => console.log(`  → ${s.name} | ${s.class} | ${s.role}`));
   return result.signups.length > 0 ? result : null;
 }
@@ -229,15 +220,13 @@ function isRaidhelperMessage(message) {
   if (message.author?.id === rhBotId) return true;
   if (message.webhookId && message.embeds?.length > 0) {
     const embed = message.embeds[0];
-    const text  = stripDiscordEmojis((embed?.title || '') + (embed?.description || ''));
+    const text  = stripAll((embed?.title || '') + (embed?.description || ''));
     if (text.toLowerCase().includes('raid') ||
         text.toLowerCase().includes('signup') ||
         embed?.fields?.some(f =>
-          /group\s*\d+/i.test(f.name || '') ||
-          CLASS_MAP[stripDiscordEmojis(f.name||'').toLowerCase().replace(/[^a-zäöü]/gi,'')]
-        )) {
-      return true;
-    }
+          CLASS_MAP[stripAll(f.name||'').toLowerCase().replace(/[^a-zäöü]/gi,'')] ||
+          /group\s*\d+/i.test(f.name || '')
+        )) return true;
   }
   return false;
 }
