@@ -1,4 +1,4 @@
-// raidhelper-parser.js - Final Clean Version
+// raidhelper-parser.js - Final Version mit korrekter Spieler-Trennung
 
 const CLASS_MAP = {
   'tank':'Tank', 'warrior':'Krieger', 'paladin':'Paladin',
@@ -26,56 +26,47 @@ const ROLE_MAP = {
 };
 
 const EMOJI_CLASS_MAP = {
-  'warrior':'Krieger',   'paladin':'Paladin',   'hunter':'Jäger',
-  'rogue':'Schurke',     'priest':'Priester',   'shaman':'Schamane',
-  'mage':'Magier',       'warlock':'Hexenmeister', 'druid':'Druide',
+  'warrior':'Krieger', 'paladin':'Paladin', 'hunter':'Jäger',
+  'rogue':'Schurke', 'priest':'Priester', 'shaman':'Schamane',
+  'mage':'Magier', 'warlock':'Hexenmeister', 'druid':'Druide',
   'deathknight':'Todesritter', 'dk':'Todesritter',
 };
 
 const EMOJI_ROLE_MAP = {
   'protection':'Tank', 'prot':'Tank',
-  'holy':'Heal', 'resto':'Heal', 'restoration':'Heal', 'discipline':'Heal', 'disc':'Heal',
+  'holy':'Heal', 'resto':'Heal', 'restoration':'Heal',
+  'discipline':'Heal', 'disc':'Heal',
   'shadow':'Ranged DPS', 'balance':'Ranged DPS', 'elemental':'Ranged DPS',
-  'enhancement':'Melee DPS', 'feral':'Melee DPS',
-  'fury':'Melee DPS', 'arms':'Melee DPS', 'combat':'Melee DPS',
-  'assassination':'Melee DPS', 'subtlety':'Melee DPS',
+  'enhancement':'Melee DPS', 'enh':'Melee DPS',
+  'feral':'Melee DPS', 'fury':'Melee DPS', 'arms':'Melee DPS',
+  'combat':'Melee DPS', 'assassination':'Melee DPS', 'subtlety':'Melee DPS',
   'marksmanship':'Ranged DPS', 'beastmastery':'Ranged DPS', 'survival':'Ranged DPS',
   'fire':'Ranged DPS', 'frost':'Ranged DPS', 'arcane':'Ranged DPS',
   'affliction':'Ranged DPS', 'destruction':'Ranged DPS', 'demonology':'Ranged DPS',
-  'retribution':'Melee DPS', 'ret':'Melee DPS',
-  'unholy':'Melee DPS',
+  'retribution':'Melee DPS', 'ret':'Melee DPS', 'unholy':'Melee DPS',
 };
 
-// Zeilen die keine Spieler sind (Header/Footer/Info)
-const SKIP_PATTERNS = [
-  /^melee\s*\*?\*?\d+/i,
-  /^ranged\s*\*?\*?\d+/i,
-  /^healer\s*\*?\*?\d+/i,
-  /^healers\s*\*?\*?\d+/i,
-  /^tank\s*\*?\*?\d+/i,
-  /^web\s*view/i,
-  /^\[comp\]/i,
-  /^https?:\/\//,
-  /^\d+\s*\(\+\d+\)/,  // "26 (+1)" = Gesamtanzahl
-  /^<#\d+>/,           // Discord Channel-Mentions
-];
+function stripMarkdown(text) {
+  return text
+    .replace(/\*\*/g, '').replace(/\*/g, '')
+    .replace(/__/g, '').replace(/_/g, '')
+    .replace(/`/g, '').trim();
+}
+
+function stripDiscordEmojis(text) {
+  return text.replace(/<a?:[a-zA-Z0-9_]+:\d+>/g, '').trim();
+}
 
 function stripAll(text) {
   let s = text;
-  // Custom Discord Emojis: <:name:id> und <a:name:id>
   s = s.replace(/<a?:[a-zA-Z0-9_]+:\d+>/g, '');
-  // Discord Mentions
   s = s.replace(/<@!?\d+>/g, '');
   s = s.replace(/<#\d+>/g, '');
-  // Markdown Bold/Italic
-  s = s.replace(/\*\*/g, '').replace(/\*/g, '').replace(/__/g, '').replace(/_/g, '');
-  // Backticks
+  s = s.replace(/\*\*/g, '').replace(/\*/g, '');
+  s = s.replace(/__/g, '').replace(/_(?=[^_])/g, '');
   s = s.replace(/`/g, '');
-  // Unicode Emojis
-  s = s.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F000}-\u{1F02F}]/gu, '');
-  // Häkchen / Kreuze
+  s = s.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '');
   s = s.replace(/[✅✔☑✓❌✗]/gu, '');
-  // Mehrfache Leerzeichen
   s = s.replace(/\s+/g, ' ').trim();
   return s;
 }
@@ -99,31 +90,36 @@ function extractEmojiInfo(rawLine) {
 
 function cleanName(raw) {
   let s = stripAll(raw);
-  // Nummer am Anfang entfernen: "8 Thryne" → "Thryne"
+  // Nummer + Leerzeichen am Anfang: "8 Thryne" → "Thryne"
   s = s.replace(/^\d+\s+/, '').trim();
   // Backtick-Nummer: "`8`" am Anfang
-  s = s.replace(/^`?\d+`?\s+/, '').trim();
+  s = s.replace(/^`?\d+`?\s*/, '').trim();
   // Sonderzeichen am Anfang
   s = s.replace(/^[^a-zA-ZäöüÄÖÜß0-9]+/, '').trim();
   return s;
 }
 
 function isConfirmedLine(raw) {
-  return /✅|✔|☑|✓/.test(raw);
-}
-
-function isSkippableLine(raw) {
-  const clean = stripAll(raw).trim();
-  if (!clean || clean === '-' || clean === '–' || clean === '—') return true;
-  if (clean.toLowerCase() === 'empty') return true;
-  return SKIP_PATTERNS.some(p => p.test(clean));
+  return /[✅✔☑✓]/.test(raw);
 }
 
 function isTentativeOrAbsence(name) {
-  const lower = name.toLowerCase();
+  const lower = (name || '').toLowerCase();
   return lower.includes('tentative') || lower.includes('absence') ||
-         lower.includes('bench')     || lower.includes('absent')  ||
-         lower.includes('late');
+         lower.includes('bench') || lower.includes('absent') || lower.includes('late');
+}
+
+function isHeaderLine(cleaned) {
+  // Zeilen die Gruppen-Info oder Zählungen sind
+  return /^(melee|ranged|healer|healers|tank|tanks)\s*\d*/i.test(cleaned) ||
+         /^\d+\s*\(\+\d+\)/.test(cleaned) ||
+         /^web\s*view/i.test(cleaned) ||
+         /^https?:\/\//.test(cleaned) ||
+         /^\[comp\]/i.test(cleaned) ||
+         /^<#\d+>/.test(cleaned) ||
+         cleaned === '' || cleaned === '-' || cleaned === '–' || cleaned === '—' ||
+         /^-+$/.test(cleaned) ||
+         /^\d+$/.test(cleaned);
 }
 
 function getClassFromField(fieldName) {
@@ -136,42 +132,24 @@ function getRoleFromField(fieldName) {
   return ROLE_MAP[clean] || '';
 }
 
-function isGroupFormat(fields) {
-  return fields.some(f => /group\s*\d+/i.test(stripAll(f.name || '')));
+// Erkennt ob ein Field das Gruppen-Format hat (Group 1, Group 2 etc.)
+function isGroupField(fieldName) {
+  return /group\s*\d+/i.test(stripAll(fieldName || ''));
 }
 
-function parseFields(fields, onlyConfirmed) {
-  const signups = [];
-  for (const field of fields) {
-    const fieldName = field.name || '';
-    if (isTentativeOrAbsence(stripAll(fieldName))) continue;
-
-    const klass = getClassFromField(fieldName);
-    const role  = getRoleFromField(fieldName);
-    const lines = (field.value || '').split('\n').map(l => l.trim()).filter(Boolean);
-
-    for (const line of lines) {
-      if (isSkippableLine(line)) continue;
-      if (onlyConfirmed && !isConfirmedLine(line)) continue;
-
-      const { klass: emojiKlass, role: emojiRole } = extractEmojiInfo(line);
-      const name = cleanName(line);
-
-      if (!name || name.length < 2) continue;
-      // Nochmals prüfen ob der bereinigte Name ein Skip-Pattern matcht
-      if (isSkippableLine(name)) continue;
-      // Reine Zahlen überspringen
-      if (/^\d+$/.test(name)) continue;
-
-      signups.push({
-        name,
-        class: klass || emojiKlass,
-        spec:  '',
-        role:  role  || emojiRole,
-      });
-    }
-  }
-  return signups;
+// Einzelnen Spieler-Eintrag aus einer Zeile extrahieren
+function extractPlayer(line, defaultClass, defaultRole) {
+  const { klass: emojiKlass, role: emojiRole } = extractEmojiInfo(line);
+  const name = cleanName(line);
+  if (!name || name.length < 2) return null;
+  if (isHeaderLine(name)) return null;
+  if (isTentativeOrAbsence(name)) return null;
+  return {
+    name,
+    class: defaultClass || emojiKlass || '',
+    spec:  '',
+    role:  defaultRole  || emojiRole  || '',
+  };
 }
 
 function parseRaidhelperEmbed(message) {
@@ -185,23 +163,42 @@ function parseRaidhelperEmbed(message) {
     signups: [],
   };
 
-  if (embed.fields?.length > 0) {
-    const fields = embed.fields;
-    // Prüfen ob confirmed-Marker vorhanden sind
-    const hasConfirm = fields.some(f =>
-      (f.value || '').split('\n').some(l => isConfirmedLine(l))
-    );
+  if (!embed.fields?.length) return null;
 
-    if (isGroupFormat(fields)) {
-      console.log('[Parser] Format: Gruppen');
-      result.signups = parseFields(fields, hasConfirm);
-    } else {
-      console.log('[Parser] Format: Klassen');
-      result.signups = parseFields(fields, hasConfirm);
+  const fields = embed.fields;
+
+  // Prüfen ob ✅ Marker vorhanden (Confirmed-Filter aktiv machen)
+  const hasConfirmMarkers = fields.some(f =>
+    (f.value || '').split('\n').some(l => isConfirmedLine(l))
+  );
+
+  for (const field of fields) {
+    const fieldName = field.name || '';
+    if (isTentativeOrAbsence(stripAll(fieldName))) continue;
+
+    const defaultClass = getClassFromField(fieldName);
+    const defaultRole  = getRoleFromField(fieldName);
+    const rawValue     = field.value || '';
+
+    // Jede Zeile einzeln verarbeiten
+    const lines = rawValue.split('\n').map(l => l.trim()).filter(Boolean);
+
+    for (const line of lines) {
+      // Confirmed-Filter: wenn ✅ im Embed vorhanden, nur ✅-Zeilen nehmen
+      if (hasConfirmMarkers && !isConfirmedLine(line)) {
+        const cleanedForCheck = stripAll(line);
+        if (!isHeaderLine(cleanedForCheck)) {
+          console.log(`[Parser] Skip (nicht ✅): ${cleanedForCheck}`);
+        }
+        continue;
+      }
+
+      const player = extractPlayer(line, defaultClass, defaultRole);
+      if (player) result.signups.push(player);
     }
   }
 
-  // Duplikate entfernen
+  // Duplikate entfernen (nach Name)
   const seen = new Set();
   result.signups = result.signups.filter(s => {
     const key = s.name.toLowerCase();
@@ -211,7 +208,7 @@ function parseRaidhelperEmbed(message) {
   });
 
   console.log(`[Parser] ${result.signups.length} Spieler für "${result.title}"`);
-  result.signups.forEach(s => console.log(`  → ${s.name} | ${s.class} | ${s.role}`));
+  result.signups.forEach(s => console.log(`  → ${s.name} | ${s.class || '?'} | ${s.role || '?'}`));
   return result.signups.length > 0 ? result : null;
 }
 
