@@ -1,7 +1,5 @@
-// raidhelper-parser.js
-// Unterstützt beide Raidhelper-Formate:
-// Format A: Klassen als Fields (Tank, Warrior etc.) mit Spielernamen
-// Format B: Gruppen als Fields (Group 1, Group 2 etc.) mit ✅ für confirmed
+// raidhelper-parser.js - Final Version
+// Bereinigt Discord Custom Emojis aus Raidhelper-Embeds
 
 const CLASS_MAP = {
   'tank':'Tank', 'warrior':'Krieger', 'paladin':'Paladin',
@@ -14,7 +12,7 @@ const CLASS_MAP = {
 };
 
 const ROLE_MAP = {
-  'tank':'Tank',        'tanks':'Tank',
+  'tank':'Tank',         'tanks':'Tank',
   'warrior':'Melee DPS', 'krieger':'Melee DPS',
   'paladin':'Heal',
   'hunter':'Ranged DPS', 'jäger':'Ranged DPS',
@@ -28,133 +26,161 @@ const ROLE_MAP = {
   'ranged':'Ranged DPS', 'melee':'Melee DPS',
 };
 
-// Klassen-Erkennung aus Emoji (Raidhelper nutzt Klassen-Emojis)
-function detectClassFromEmoji(text) {
-  // Raidhelper Klassen-Emojis (Unicode Codepoints)
-  if (text.includes('🗡') || text.includes('⚔'))  return 'Krieger';
-  if (text.includes('🔨') || text.includes('✨'))  return 'Paladin';
-  if (text.includes('🏹'))                          return 'Jäger';
-  if (text.includes('🗡️'))                         return 'Schurke';
-  if (text.includes('⭐') || text.includes('💫'))  return 'Priester';
-  if (text.includes('⚡') || text.includes('🌊'))  return 'Schamane';
-  if (text.includes('❄️') || text.includes('🔥')) return 'Magier';
-  if (text.includes('💀') || text.includes('👁'))  return 'Hexenmeister';
-  if (text.includes('🌿') || text.includes('🍃')) return 'Druide';
-  return '';
+// Raidhelper Custom Emoji Namen → Klasse
+const EMOJI_CLASS_MAP = {
+  'warrior':'Krieger',   'paladin':'Paladin',   'hunter':'Jäger',
+  'rogue':'Schurke',     'priest':'Priester',   'shaman':'Schamane',
+  'mage':'Magier',       'warlock':'Hexenmeister', 'druid':'Druide',
+  'deathknight':'Todesritter', 'dk':'Todesritter',
+  // Spec-spezifische Emojis
+  'protection':'Tank',   'prot':'Tank',
+  'holy':'Heal',         'resto':'Heal',        'restoration':'Heal',
+  'discipline':'Heal',   'disc':'Heal',
+  'shadow':'Ranged DPS', 'balance':'Ranged DPS','boomkin':'Ranged DPS',
+  'elemental':'Ranged DPS', 'ele':'Ranged DPS',
+  'enhancement':'Melee DPS', 'enh':'Melee DPS',
+  'feral':'Melee DPS',   'fury':'Melee DPS',    'arms':'Melee DPS',
+  'combat':'Melee DPS',  'assassination':'Melee DPS', 'subtlety':'Melee DPS',
+  'marksmanship':'Ranged DPS', 'mm':'Ranged DPS',
+  'beastmastery':'Ranged DPS', 'survival':'Ranged DPS',
+  'fire':'Ranged DPS',   'frost':'Ranged DPS',  'arcane':'Ranged DPS',
+  'affliction':'Ranged DPS', 'destruction':'Ranged DPS', 'demonology':'Ranged DPS',
+  'retribution':'Melee DPS', 'ret':'Melee DPS',
+  'unholy':'Melee DPS',  'blooddk':'Melee DPS',
+};
+
+function stripDiscordEmojis(text) {
+  // Custom Discord Emojis entfernen: <:name:id> und <a:name:id>
+  return text.replace(/<a?:[a-zA-Z0-9_]+:\d+>/g, '').trim();
+}
+
+function extractEmojiInfo(text) {
+  // Klassen-Info aus Custom Emoji-Namen extrahieren
+  const matches = text.match(/<a?:([a-zA-Z0-9_]+):\d+>/g) || [];
+  let klass = '', role = '';
+  for (const emoji of matches) {
+    const nameMatch = emoji.match(/<a?:([a-zA-Z0-9_]+):\d+>/);
+    if (!nameMatch) continue;
+    const emojiName = nameMatch[1].toLowerCase();
+    // Klassen-Emoji erkennen
+    for (const [key, val] of Object.entries(EMOJI_CLASS_MAP)) {
+      if (emojiName.includes(key)) {
+        if (CLASS_MAP[val.toLowerCase()] || Object.values(CLASS_MAP).includes(val)) {
+          klass = val;
+        }
+        if (ROLE_MAP[key]) role = ROLE_MAP[key];
+        break;
+      }
+    }
+  }
+  return { klass, role };
 }
 
 function cleanPlayerName(text) {
-  // Nummer am Anfang entfernen (z.B. "7 Honeypaw" → "Honeypaw")
-  let name = text.replace(/^\d+\s+/, '').trim();
+  // Custom Discord Emojis entfernen
+  let name = stripDiscordEmojis(text);
+  // Nummer am Anfang entfernen
+  name = name.replace(/^\d+\s+/, '').trim();
   // Discord Mentions entfernen
   name = name.replace(/<@!?\d+>/g, '').trim();
   // Häkchen und Status-Symbole entfernen
   name = name.replace(/^[✅✔☑✓\-–—]\s*/u, '').trim();
-  // Emojis am Anfang entfernen
-  name = name.replace(/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]+\s*/gu, '').trim();
+  // Unicode Emojis entfernen
+  name = name.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
   // Sonderzeichen am Anfang
   name = name.replace(/^[^a-zA-ZäöüÄÖÜß0-9]+/, '').trim();
+  // Mehrfache Leerzeichen
+  name = name.replace(/\s+/g, ' ').trim();
   return name;
 }
 
-function isConfirmed(line) {
-  // ✅ oder ✔ am Anfang = confirmed
+function isConfirmedLine(line) {
   return /^[✅✔☑✓]/u.test(line.trim());
 }
 
 function isEmptySlot(line) {
-  const clean = line.trim();
-  return clean === '-' || clean === '–' || clean === '—' ||
-         clean === '' || clean.toLowerCase() === 'empty' ||
-         /^-+$/.test(clean);
+  const clean = stripDiscordEmojis(line).trim();
+  return clean === '' || clean === '-' || clean === '–' || clean === '—' ||
+         /^-+$/.test(clean) || clean.toLowerCase() === 'empty';
+}
+
+function isTentativeOrAbsence(fieldName) {
+  const lower = fieldName.toLowerCase();
+  return lower.includes('tentative') || lower.includes('absence') ||
+         lower.includes('bench')     || lower.includes('absent')  ||
+         lower.includes('late');
 }
 
 function getClassFromFieldName(fieldName) {
-  const lower = fieldName.toLowerCase().replace(/[^a-zäöü]/gi, '');
-  return CLASS_MAP[lower] || '';
+  const clean = stripDiscordEmojis(fieldName);
+  const lower = clean.toLowerCase().replace(/[^a-zäöü\s]/gi, '').trim();
+  const key = lower.replace(/\s+/g, '');
+  return CLASS_MAP[key] || CLASS_MAP[lower] || '';
 }
 
 function getRoleFromFieldName(fieldName) {
-  const lower = fieldName.toLowerCase().replace(/[^a-zäöü]/gi, '');
-  return ROLE_MAP[lower] || '';
+  const clean = stripDiscordEmojis(fieldName);
+  const lower = clean.toLowerCase().replace(/[^a-zäöü\s]/gi, '').trim();
+  const key = lower.replace(/\s+/g, '');
+  return ROLE_MAP[key] || ROLE_MAP[lower] || '';
 }
 
 function isGroupFormat(fields) {
-  // Prüfen ob Fields "Group 1", "Group 2" etc. heißen
-  return fields.some(f => /group\s*\d+/i.test(f.name || ''));
-}
-
-function isClassFormat(fields) {
-  // Prüfen ob Fields Klassennamen sind (Tank, Warrior etc.)
-  return fields.some(f => {
-    const lower = (f.name || '').toLowerCase().replace(/[^a-zäöü]/gi, '');
-    return CLASS_MAP[lower] || ROLE_MAP[lower];
-  });
+  return fields.some(f => /group\s*\d+/i.test(stripDiscordEmojis(f.name || '')));
 }
 
 function parseGroupFormat(fields) {
-  // Format B: Group 1, Group 2 etc. mit ✅ für confirmed
   const signups = [];
   for (const field of fields) {
-    const fieldName = (field.name || '').trim();
-    if (isEmptySlot(fieldName)) continue;
-
+    if (isTentativeOrAbsence(field.name || '')) continue;
     const lines = (field.value || '').split('\n').map(l => l.trim()).filter(Boolean);
+    const hasConfirm = lines.some(l => isConfirmedLine(l));
+
     for (const line of lines) {
       if (isEmptySlot(line)) continue;
-
-      // Nur confirmed (✅) einschließen
-      if (!isConfirmed(line)) {
-        console.log(`[Parser] Übersprungen (nicht confirmed): ${line}`);
+      if (hasConfirm && !isConfirmedLine(line)) {
+        console.log(`[Parser] Skip (nicht ✅): ${stripDiscordEmojis(line).trim()}`);
         continue;
       }
-
-      const klass = detectClassFromEmoji(line);
-      const name  = cleanPlayerName(line);
+      const { klass, role } = extractEmojiInfo(line);
+      const name = cleanPlayerName(line);
       if (!name || name.length < 2) continue;
-
-      signups.push({ name, class: klass, spec: '', role: '' });
+      signups.push({ name, class: klass, spec: '', role });
     }
   }
   return signups;
 }
 
 function parseClassFormat(fields) {
-  // Format A: Klassen als Field-Namen mit Spielerliste
   const signups = [];
   for (const field of fields) {
-    const fieldName  = (field.name  || '').trim();
+    if (isTentativeOrAbsence(field.name || '')) continue;
     const fieldValue = (field.value || '').trim();
-    if (!fieldValue || isEmptySlot(fieldValue)) continue;
+    if (!fieldValue) continue;
 
-    // Tentative/Absence überspringen
-    const lowerName = fieldName.toLowerCase();
-    if (lowerName.includes('tentative') || lowerName.includes('absence') ||
-        lowerName.includes('bench')     || lowerName.includes('absent')) continue;
-
-    const klass = getClassFromFieldName(fieldName);
-    const role  = getRoleFromFieldName(fieldName);
-
+    const klass = getClassFromFieldName(field.name || '');
+    const role  = getRoleFromFieldName(field.name || '');
     const lines = fieldValue.split('\n').map(l => l.trim()).filter(Boolean);
+    const hasConfirm = lines.some(l => isConfirmedLine(l));
+
     for (const line of lines) {
       if (isEmptySlot(line)) continue;
-
-      // Bei Klassen-Format: confirmed-Filter optional
-      // Wenn ✅ vorhanden → nur confirmed; wenn keine ✅ → alle nehmen
-      const hasConfirmMarkers = lines.some(l => isConfirmed(l));
-      if (hasConfirmMarkers && !isConfirmed(line)) {
-        console.log(`[Parser] Übersprungen (nicht confirmed): ${line}`);
+      if (hasConfirm && !isConfirmedLine(line)) {
+        console.log(`[Parser] Skip (nicht ✅): ${stripDiscordEmojis(line).trim()}`);
         continue;
       }
-
+      const emojiInfo = extractEmojiInfo(line);
       const name = cleanPlayerName(line);
       if (!name || name.length < 2) continue;
-
       let spec = '';
       const specMatch = line.match(/\(([^)]+)\)/);
       if (specMatch) spec = specMatch[1].trim();
-
-      signups.push({ name, class: klass, spec, role });
+      signups.push({
+        name,
+        class: klass || emojiInfo.klass,
+        spec,
+        role:  role  || emojiInfo.role,
+      });
     }
   }
   return signups;
@@ -167,26 +193,17 @@ function parseRaidhelperEmbed(message) {
 
   const result = {
     eventId: message.id,
-    title:   embed.title || embed.description?.split('\n')[0] || 'Raid Event',
+    title:   stripDiscordEmojis(embed.title || embed.description?.split('\n')[0] || 'Raid Event'),
     signups: [],
   };
 
   if (embed.fields && embed.fields.length > 0) {
-    const fields = embed.fields;
-
-    if (isGroupFormat(fields)) {
-      console.log('[Parser] Format erkannt: Gruppen (Group 1, Group 2...)');
-      result.signups = parseGroupFormat(fields);
-    } else if (isClassFormat(fields)) {
-      console.log('[Parser] Format erkannt: Klassen (Tank, Warrior...)');
-      result.signups = parseClassFormat(fields);
+    if (isGroupFormat(embed.fields)) {
+      console.log('[Parser] Format: Gruppen (Group 1, Group 2...)');
+      result.signups = parseGroupFormat(embed.fields);
     } else {
-      // Fallback: beide versuchen
-      console.log('[Parser] Format unbekannt – versuche beide Parser');
-      result.signups = parseGroupFormat(fields);
-      if (result.signups.length === 0) {
-        result.signups = parseClassFormat(fields);
-      }
+      console.log('[Parser] Format: Klassen (Tank, Warrior...)');
+      result.signups = parseClassFormat(embed.fields);
     }
   }
 
@@ -194,7 +211,7 @@ function parseRaidhelperEmbed(message) {
   if (result.signups.length === 0 && embed.description) {
     const lines = embed.description.split('\n');
     for (const line of lines) {
-      if (!isConfirmed(line) && line.includes('✅')) continue;
+      if (isEmptySlot(line)) continue;
       const name = cleanPlayerName(line);
       if (name && name.length >= 2 && !name.startsWith('http')) {
         result.signups.push({ name, class: '', spec: '', role: '' });
@@ -202,7 +219,8 @@ function parseRaidhelperEmbed(message) {
     }
   }
 
-  console.log(`[Parser] ${result.signups.length} Spieler gefunden für "${result.title}"`);
+  console.log(`[Parser] ${result.signups.length} Spieler (confirmed) für "${result.title}"`);
+  result.signups.forEach(s => console.log(`  → ${s.name} | ${s.class} | ${s.role}`));
   return result.signups.length > 0 ? result : null;
 }
 
@@ -211,11 +229,13 @@ function isRaidhelperMessage(message) {
   if (message.author?.id === rhBotId) return true;
   if (message.webhookId && message.embeds?.length > 0) {
     const embed = message.embeds[0];
-    const text  = (embed?.title || '') + (embed?.description || '') + (embed?.footer?.text || '');
+    const text  = stripDiscordEmojis((embed?.title || '') + (embed?.description || ''));
     if (text.toLowerCase().includes('raid') ||
         text.toLowerCase().includes('signup') ||
-        embed?.fields?.some(f => /group\s*\d+/i.test(f.name || '') ||
-          CLASS_MAP[(f.name||'').toLowerCase().replace(/[^a-zäöü]/gi,'')])) {
+        embed?.fields?.some(f =>
+          /group\s*\d+/i.test(f.name || '') ||
+          CLASS_MAP[stripDiscordEmojis(f.name||'').toLowerCase().replace(/[^a-zäöü]/gi,'')]
+        )) {
       return true;
     }
   }
