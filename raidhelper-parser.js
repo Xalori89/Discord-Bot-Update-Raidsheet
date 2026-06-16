@@ -189,17 +189,28 @@ function extractPlayerFromLine(line) {
 }
 
 function isInfoField(field) {
-  // Fields 0-5 sind immer Info-Fields (Leader, Date, Time, Counts)
-  // Erkennungsmerkmal: Zeilen enthalten nur System-Emojis und Timestamps
   const lines = (field.value || '').split('\n').filter(l => l.trim());
   if (!lines.length) return true;
+
+  // Wochentags-Fields komplett überspringen: montag, mittwoch etc.
+  // Diese enthalten Spieler die nur an bestimmten Tagen können - nicht im Lineup
+  const firstLine = stripAll(lines[0] || '');
+  if (/^(montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag|monday|tuesday|wednesday|thursday|friday|saturday|sunday):/i.test(firstLine)) return true;
+
+  // Bench-Field überspringen
+  if (/^bench:/i.test(firstLine)) return true;
+
+  // Edit Name Field überspringen
+  if (/^Edit Name$/i.test(firstLine)) return true;
+
+  // System-Only Fields (Leader, Date, Time, Counts)
   const allSystem = lines.every(l => {
     const s = stripAll(l);
     return !s ||
-           s === '​' ||                        // zero-width space
-           /^<t:\d+/.test(l) ||               // Timestamp
+           s === '\u200b' ||
+           /^<t:\d+/.test(l) ||
            isSystemOnlyLine(l) ||
-           /^\*\*\d+\*\*\s*\(\+\d+\)/.test(l) || // "**26** (+1)"
+           /^\*\*\d+\*\*\s*\(\+\d+\)/.test(l) ||
            /^Tanks|Melee|Ranged|Healer/i.test(s);
   });
   return allSystem;
