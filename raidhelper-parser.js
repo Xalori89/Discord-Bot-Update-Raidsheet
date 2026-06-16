@@ -1,4 +1,4 @@
-// raidhelper-parser.js - Final Version mit korrekter Spieler-Trennung
+// raidhelper-parser.js - Klassen-Header werden übersprungen
 
 const CLASS_MAP = {
   'tank':'Tank', 'warrior':'Krieger', 'paladin':'Paladin',
@@ -11,17 +11,17 @@ const CLASS_MAP = {
 };
 
 const ROLE_MAP = {
-  'tank':'Tank',         'tanks':'Tank',
+  'tank':'Tank', 'tanks':'Tank',
   'warrior':'Melee DPS', 'krieger':'Melee DPS',
   'paladin':'Heal',
   'hunter':'Ranged DPS', 'jäger':'Ranged DPS',
-  'rogue':'Melee DPS',   'schurke':'Melee DPS',
-  'priest':'Heal',       'priester':'Heal',
-  'shaman':'Heal',       'schamane':'Heal',
-  'mage':'Ranged DPS',   'magier':'Ranged DPS',
-  'warlock':'Ranged DPS','hexenmeister':'Ranged DPS',
-  'druid':'Ranged DPS',  'druide':'Ranged DPS',
-  'healer':'Heal',       'healers':'Heal',
+  'rogue':'Melee DPS', 'schurke':'Melee DPS',
+  'priest':'Heal', 'priester':'Heal',
+  'shaman':'Heal', 'schamane':'Heal',
+  'mage':'Ranged DPS', 'magier':'Ranged DPS',
+  'warlock':'Ranged DPS', 'hexenmeister':'Ranged DPS',
+  'druid':'Ranged DPS', 'druide':'Ranged DPS',
+  'healer':'Heal', 'healers':'Heal',
   'ranged':'Ranged DPS', 'melee':'Melee DPS',
 };
 
@@ -34,28 +34,16 @@ const EMOJI_CLASS_MAP = {
 
 const EMOJI_ROLE_MAP = {
   'protection':'Tank', 'prot':'Tank',
-  'holy':'Heal', 'resto':'Heal', 'restoration':'Heal',
-  'discipline':'Heal', 'disc':'Heal',
+  'holy':'Heal', 'resto':'Heal', 'restoration':'Heal', 'discipline':'Heal', 'disc':'Heal',
   'shadow':'Ranged DPS', 'balance':'Ranged DPS', 'elemental':'Ranged DPS',
-  'enhancement':'Melee DPS', 'enh':'Melee DPS',
-  'feral':'Melee DPS', 'fury':'Melee DPS', 'arms':'Melee DPS',
-  'combat':'Melee DPS', 'assassination':'Melee DPS', 'subtlety':'Melee DPS',
+  'enhancement':'Melee DPS', 'enh':'Melee DPS', 'feral':'Melee DPS',
+  'fury':'Melee DPS', 'arms':'Melee DPS', 'combat':'Melee DPS',
+  'assassination':'Melee DPS', 'subtlety':'Melee DPS',
   'marksmanship':'Ranged DPS', 'beastmastery':'Ranged DPS', 'survival':'Ranged DPS',
   'fire':'Ranged DPS', 'frost':'Ranged DPS', 'arcane':'Ranged DPS',
   'affliction':'Ranged DPS', 'destruction':'Ranged DPS', 'demonology':'Ranged DPS',
   'retribution':'Melee DPS', 'ret':'Melee DPS', 'unholy':'Melee DPS',
 };
-
-function stripMarkdown(text) {
-  return text
-    .replace(/\*\*/g, '').replace(/\*/g, '')
-    .replace(/__/g, '').replace(/_/g, '')
-    .replace(/`/g, '').trim();
-}
-
-function stripDiscordEmojis(text) {
-  return text.replace(/<a?:[a-zA-Z0-9_]+:\d+>/g, '').trim();
-}
 
 function stripAll(text) {
   let s = text;
@@ -63,7 +51,6 @@ function stripAll(text) {
   s = s.replace(/<@!?\d+>/g, '');
   s = s.replace(/<#\d+>/g, '');
   s = s.replace(/\*\*/g, '').replace(/\*/g, '');
-  s = s.replace(/__/g, '').replace(/_(?=[^_])/g, '');
   s = s.replace(/`/g, '');
   s = s.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '');
   s = s.replace(/[✅✔☑✓❌✗]/gu, '');
@@ -90,11 +77,8 @@ function extractEmojiInfo(rawLine) {
 
 function cleanName(raw) {
   let s = stripAll(raw);
-  // Nummer + Leerzeichen am Anfang: "8 Thryne" → "Thryne"
   s = s.replace(/^\d+\s+/, '').trim();
-  // Backtick-Nummer: "`8`" am Anfang
   s = s.replace(/^`?\d+`?\s*/, '').trim();
-  // Sonderzeichen am Anfang
   s = s.replace(/^[^a-zA-ZäöüÄÖÜß0-9]+/, '').trim();
   return s;
 }
@@ -109,17 +93,24 @@ function isTentativeOrAbsence(name) {
          lower.includes('bench') || lower.includes('absent') || lower.includes('late');
 }
 
-function isHeaderLine(cleaned) {
-  // Zeilen die Gruppen-Info oder Zählungen sind
-  return /^(melee|ranged|healer|healers|tank|tanks)\s*\d*/i.test(cleaned) ||
-         /^\d+\s*\(\+\d+\)/.test(cleaned) ||
-         /^web\s*view/i.test(cleaned) ||
-         /^https?:\/\//.test(cleaned) ||
-         /^\[comp\]/i.test(cleaned) ||
-         /^<#\d+>/.test(cleaned) ||
-         cleaned === '' || cleaned === '-' || cleaned === '–' || cleaned === '—' ||
-         /^-+$/.test(cleaned) ||
-         /^\d+$/.test(cleaned);
+// Erkennt Klassen-Header wie "Warrior (1)", "Priest (3)", "Tank (2)" etc.
+function isClassHeader(cleaned) {
+  // Muster: "Klassenname (Zahl)" oder "Rollenname (Zahl)"
+  if (/^(warrior|paladin|hunter|rogue|priest|shaman|mage|warlock|druid|deathknight|tank|healer|melee|ranged|krieger|priester|schamane|magier|hexenmeister|druide|todesritter|jäger|schurke)\s*\(\d+\)$/i.test(cleaned)) return true;
+  // Zähler wie "2** Melee **6" oder "Ranged 12"
+  if (/^(melee|ranged|healer|healers|tank|tanks)\s*\*?\*?\d+/i.test(cleaned)) return true;
+  // Zähler "26 (+1)"
+  if (/^\d+\s*\(\+\d+\)/.test(cleaned)) return true;
+  // Links und System-Zeilen
+  if (/^https?:\/\//.test(cleaned)) return true;
+  if (/^web\s*view/i.test(cleaned)) return true;
+  if (/^\[comp\]/i.test(cleaned)) return true;
+  if (/^<#\d+>/.test(cleaned)) return true;
+  // Leer / Striche
+  if (!cleaned || /^-+$/.test(cleaned) || cleaned === '–' || cleaned === '—') return true;
+  // Reine Zahlen
+  if (/^\d+$/.test(cleaned)) return true;
+  return false;
 }
 
 function getClassFromField(fieldName) {
@@ -132,30 +123,10 @@ function getRoleFromField(fieldName) {
   return ROLE_MAP[clean] || '';
 }
 
-// Erkennt ob ein Field das Gruppen-Format hat (Group 1, Group 2 etc.)
-function isGroupField(fieldName) {
-  return /group\s*\d+/i.test(stripAll(fieldName || ''));
-}
-
-// Einzelnen Spieler-Eintrag aus einer Zeile extrahieren
-function extractPlayer(line, defaultClass, defaultRole) {
-  const { klass: emojiKlass, role: emojiRole } = extractEmojiInfo(line);
-  const name = cleanName(line);
-  if (!name || name.length < 2) return null;
-  if (isHeaderLine(name)) return null;
-  if (isTentativeOrAbsence(name)) return null;
-  return {
-    name,
-    class: defaultClass || emojiKlass || '',
-    spec:  '',
-    role:  defaultRole  || emojiRole  || '',
-  };
-}
-
 function parseRaidhelperEmbed(message) {
   if (!message.embeds?.length) return null;
   const embed = message.embeds[0];
-  if (!embed) return null;
+  if (!embed?.fields?.length) return null;
 
   const result = {
     eventId: message.id,
@@ -163,11 +134,7 @@ function parseRaidhelperEmbed(message) {
     signups: [],
   };
 
-  if (!embed.fields?.length) return null;
-
   const fields = embed.fields;
-
-  // Prüfen ob ✅ Marker vorhanden (Confirmed-Filter aktiv machen)
   const hasConfirmMarkers = fields.some(f =>
     (f.value || '').split('\n').some(l => isConfirmedLine(l))
   );
@@ -178,27 +145,35 @@ function parseRaidhelperEmbed(message) {
 
     const defaultClass = getClassFromField(fieldName);
     const defaultRole  = getRoleFromField(fieldName);
-    const rawValue     = field.value || '';
-
-    // Jede Zeile einzeln verarbeiten
-    const lines = rawValue.split('\n').map(l => l.trim()).filter(Boolean);
+    const lines = (field.value || '').split('\n').map(l => l.trim()).filter(Boolean);
 
     for (const line of lines) {
-      // Confirmed-Filter: wenn ✅ im Embed vorhanden, nur ✅-Zeilen nehmen
+      // Confirmed-Filter
       if (hasConfirmMarkers && !isConfirmedLine(line)) {
-        const cleanedForCheck = stripAll(line);
-        if (!isHeaderLine(cleanedForCheck)) {
-          console.log(`[Parser] Skip (nicht ✅): ${cleanedForCheck}`);
+        const c = stripAll(line);
+        if (!isClassHeader(c) && c.length > 1) {
+          console.log(`[Parser] Skip (nicht ✅): ${c}`);
         }
         continue;
       }
 
-      const player = extractPlayer(line, defaultClass, defaultRole);
-      if (player) result.signups.push(player);
+      const { klass: emojiKlass, role: emojiRole } = extractEmojiInfo(line);
+      const name = cleanName(line);
+
+      if (!name || name.length < 2) continue;
+      if (isClassHeader(name)) continue;
+      if (isTentativeOrAbsence(name)) continue;
+
+      result.signups.push({
+        name,
+        class: defaultClass || emojiKlass || '',
+        spec:  '',
+        role:  defaultRole  || emojiRole  || '',
+      });
     }
   }
 
-  // Duplikate entfernen (nach Name)
+  // Duplikate entfernen
   const seen = new Set();
   result.signups = result.signups.filter(s => {
     const key = s.name.toLowerCase();
