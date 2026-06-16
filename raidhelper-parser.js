@@ -1,4 +1,4 @@
-// raidhelper-parser.js - Klassen-Header werden übersprungen
+// raidhelper-parser.js - Clean Final
 
 const CLASS_MAP = {
   'tank':'Tank', 'warrior':'Krieger', 'paladin':'Paladin',
@@ -45,15 +45,26 @@ const EMOJI_ROLE_MAP = {
   'retribution':'Melee DPS', 'ret':'Melee DPS', 'unholy':'Melee DPS',
 };
 
+// Alle Discord-Formatierung und Sonderzeichen entfernen
 function stripAll(text) {
   let s = text;
+  // Custom Emojis <:name:id>
   s = s.replace(/<a?:[a-zA-Z0-9_]+:\d+>/g, '');
+  // Discord Timestamps <t:123456:D> etc.
+  s = s.replace(/<t:\d+(?::[tTdDfFR])?>/g, '');
+  // Mentions
   s = s.replace(/<@!?\d+>/g, '');
   s = s.replace(/<#\d+>/g, '');
+  // Markdown: **, *, __, _
   s = s.replace(/\*\*/g, '').replace(/\*/g, '');
+  s = s.replace(/__/g, '').replace(/_/g, '');
+  // Backticks
   s = s.replace(/`/g, '');
+  // Unicode Emojis
   s = s.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '');
+  // Status-Symbole
   s = s.replace(/[✅✔☑✓❌✗]/gu, '');
+  // Mehrfache Leerzeichen
   s = s.replace(/\s+/g, ' ').trim();
   return s;
 }
@@ -77,8 +88,9 @@ function extractEmojiInfo(rawLine) {
 
 function cleanName(raw) {
   let s = stripAll(raw);
+  // Nummer + Leerzeichen am Anfang: "8 Thryne" → "Thryne"
   s = s.replace(/^\d+\s+/, '').trim();
-  s = s.replace(/^`?\d+`?\s*/, '').trim();
+  // Sonderzeichen am Anfang
   s = s.replace(/^[^a-zA-ZäöüÄÖÜß0-9]+/, '').trim();
   return s;
 }
@@ -87,29 +99,34 @@ function isConfirmedLine(raw) {
   return /[✅✔☑✓]/.test(raw);
 }
 
-function isTentativeOrAbsence(name) {
-  const lower = (name || '').toLowerCase();
+function isTentativeOrAbsence(text) {
+  const lower = (text || '').toLowerCase();
   return lower.includes('tentative') || lower.includes('absence') ||
          lower.includes('bench') || lower.includes('absent') || lower.includes('late');
 }
 
-// Erkennt Klassen-Header wie "Warrior (1)", "Priest (3)", "Tank (2)" etc.
-function isClassHeader(cleaned) {
-  // Muster: "Klassenname (Zahl)" oder "Rollenname (Zahl)"
-  if (/^(warrior|paladin|hunter|rogue|priest|shaman|mage|warlock|druid|deathknight|tank|healer|melee|ranged|krieger|priester|schamane|magier|hexenmeister|druide|todesritter|jäger|schurke)\s*\(\d+\)$/i.test(cleaned)) return true;
-  // Zähler wie "2** Melee **6" oder "Ranged 12"
-  if (/^(melee|ranged|healer|healers|tank|tanks)\s*\*?\*?\d+/i.test(cleaned)) return true;
-  // Zähler "26 (+1)"
+// Prüft ob eine bereinigte Zeile ein Klassen/Rollen-Header oder System-Info ist
+function isJunkLine(cleaned) {
+  if (!cleaned || cleaned.length < 2) return true;
+  // Striche / Leer
+  if (/^[-–—]+$/.test(cleaned)) return true;
+  // Reine Zahlen
+  if (/^\d+$/.test(cleaned)) return true;
+  // Klassen/Rollen-Header mit Zahl in Klammern: "Tank (2)", "Warrior (1)", "Priest (3)"
+  if (/^(tank|warrior|paladin|hunter|rogue|priest|shaman|mage|warlock|druid|deathknight|healer|healers|melee|ranged|krieger|priester|schamane|magier|hexenmeister|druide|todesritter|jäger|schurke)\s*\(\d+\)$/i.test(cleaned)) return true;
+  // Zähler "Melee 6", "Ranged 12", "Healers 6" etc.
+  if (/^(melee|ranged|healer|healers|tank|tanks)\s+\d+$/i.test(cleaned)) return true;
+  // Gesamt-Zähler "26 (+1)"
   if (/^\d+\s*\(\+\d+\)/.test(cleaned)) return true;
-  // Links und System-Zeilen
+  // Datum/Zeit Reste (nach Timestamp-Strip können Reste wie "1)" übrig bleiben)
+  if (/^\d+\)$/.test(cleaned)) return true;
+  // Links
   if (/^https?:\/\//.test(cleaned)) return true;
   if (/^web\s*view/i.test(cleaned)) return true;
   if (/^\[comp\]/i.test(cleaned)) return true;
   if (/^<#\d+>/.test(cleaned)) return true;
-  // Leer / Striche
-  if (!cleaned || /^-+$/.test(cleaned) || cleaned === '–' || cleaned === '—') return true;
-  // Reine Zahlen
-  if (/^\d+$/.test(cleaned)) return true;
+  // Einzelne Buchstaben/Zeichen
+  if (cleaned.length === 1) return true;
   return false;
 }
 
@@ -121,6 +138,21 @@ function getClassFromField(fieldName) {
 function getRoleFromField(fieldName) {
   const clean = stripAll(fieldName).toLowerCase().replace(/[^a-zäöü]/gi, '');
   return ROLE_MAP[clean] || '';
+}
+
+// Prüft ob ein Field ein Info/System-Field ist (Datum, Zeit, Ankündigung etc.)
+function isInfoField(fieldName) {
+  const clean = stripAll(fieldName || '').toLowerCase();
+  // Leere Fields oder reiner Emoji-Name
+  if (!clean || clean.length < 1) return true;
+  // Bekannte Info-Field-Namen von Raidhelper
+  const infoKeywords = ['date', 'time', 'leader', 'info', 'description', 'note',
+                        'datum', 'uhrzeit', 'leiter', 'beschreibung', 'notiz',
+                        'server', 'channel', 'link', 'url'];
+  if (infoKeywords.some(k => clean.includes(k))) return true;
+  // Wenn nach stripAll nur Zahlen/Sonderzeichen übrig
+  if (/^[\d\s\-_]+$/.test(clean)) return true;
+  return false;
 }
 
 function parseRaidhelperEmbed(message) {
@@ -135,33 +167,41 @@ function parseRaidhelperEmbed(message) {
   };
 
   const fields = embed.fields;
+
+  // Prüfen ob ✅ Marker vorhanden
   const hasConfirmMarkers = fields.some(f =>
     (f.value || '').split('\n').some(l => isConfirmedLine(l))
   );
 
   for (const field of fields) {
-    const fieldName = field.name || '';
+    const fieldName  = field.name || '';
+    const fieldValue = field.value || '';
+
+    // Info-Fields überspringen (Datum, Zeit etc.)
+    if (isInfoField(fieldName)) {
+      console.log(`[Parser] Skip Info-Field: "${stripAll(fieldName)}"`);
+      continue;
+    }
+
+    // Tentative/Absence überspringen
     if (isTentativeOrAbsence(stripAll(fieldName))) continue;
 
     const defaultClass = getClassFromField(fieldName);
     const defaultRole  = getRoleFromField(fieldName);
-    const lines = (field.value || '').split('\n').map(l => l.trim()).filter(Boolean);
+    const lines = fieldValue.split('\n').map(l => l.trim()).filter(Boolean);
 
     for (const line of lines) {
       // Confirmed-Filter
       if (hasConfirmMarkers && !isConfirmedLine(line)) {
         const c = stripAll(line);
-        if (!isClassHeader(c) && c.length > 1) {
-          console.log(`[Parser] Skip (nicht ✅): ${c}`);
-        }
+        if (!isJunkLine(c)) console.log(`[Parser] Skip (nicht ✅): ${c}`);
         continue;
       }
 
       const { klass: emojiKlass, role: emojiRole } = extractEmojiInfo(line);
       const name = cleanName(line);
 
-      if (!name || name.length < 2) continue;
-      if (isClassHeader(name)) continue;
+      if (isJunkLine(name)) continue;
       if (isTentativeOrAbsence(name)) continue;
 
       result.signups.push({
