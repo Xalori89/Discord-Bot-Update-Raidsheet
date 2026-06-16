@@ -167,4 +167,4 @@ function buildDiscordPayload(groups, eventTitle, signupCount, ignored) {
   };
 }
 
-module.exports = { syncSignupsToSheet, buildDiscordPayload, CLASS_DE, ROLE_DE };
+module.exports = { syncSignupsToSheet, buildDiscordPayload, getRosterData, CLASS_DE, ROLE_DE };
