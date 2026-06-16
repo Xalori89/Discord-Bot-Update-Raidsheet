@@ -228,17 +228,32 @@ function parseRaidhelperEmbed(message) {
   );
 
   for (const field of fields) {
-    // Info-Fields überspringen
     if (isInfoField(field)) continue;
 
     const lines = (field.value || '').split('\n').map(l => l.trim()).filter(Boolean);
 
+    // Kontext-Rolle aus erstem Klassen-Header im Field
+    let contextRole = '';
+    const firstStripped = stripAll(lines[0] || '');
+    if (/^Tank\s*\(\d+\)/i.test(firstStripped))                    contextRole = 'Tank';
+    else if (/^(Warrior|Krieger)\s*\(\d+\)/i.test(firstStripped)) contextRole = 'Melee DPS';
+    else if (/^(Rogue|Schurke)\s*\(\d+\)/i.test(firstStripped))   contextRole = 'Melee DPS';
+    else if (/^(Hunter|Jäger)\s*\(\d+\)/i.test(firstStripped))    contextRole = 'Ranged DPS';
+    else if (/^(Mage|Magier)\s*\(\d+\)/i.test(firstStripped))     contextRole = 'Ranged DPS';
+    else if (/^(Warlock|Hexenmeister)\s*\(\d+\)/i.test(firstStripped)) contextRole = 'Ranged DPS';
+    const isTankField = /^Tank\s*\(\d+\)/i.test(firstStripped);
+
     for (const line of lines) {
-      // Bei Confirmed-Format: nur ✅ Zeilen
       if (hasConfirm && !isConfirmed(line)) continue;
 
       const player = extractPlayerFromLine(line);
-      if (player) result.signups.push(player);
+      if (player) {
+        // Tank-Header: immer Tank unabhängig vom Spec-Emoji
+        if (isTankField) player.role = 'Tank';
+        // Sonstige Kontext-Rolle nur wenn Emoji keine Rolle liefert
+        else if (contextRole && !player.role) player.role = contextRole;
+        result.signups.push(player);
+      }
     }
   }
 
