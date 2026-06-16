@@ -3,8 +3,8 @@
 
 const { google } = require('googleapis');
 
-const ROSTER_RANGE = '📋 Roster!A3:H27';
-const STATUS_CELL  = '📋 Roster!A1';
+const ROSTER_RANGE = 'Roster!A3:H27';
+const STATUS_CELL  = 'Roster!A1';
 
 const CLASS_DE = {
   warrior:'Krieger',   paladin:'Paladin',      hunter:'Jäger',
@@ -63,7 +63,7 @@ async function syncSignupsToSheet(signups, eventTitle, eventId) {
   try {
     const metaRes = await sheets.spreadsheets.values.get({
       spreadsheetId: sheetId,
-      range: '📋 Roster!J1',
+      range: 'Roster!J1',
     });
     totalRaids = parseInt((metaRes.data.values || [[0]])[0][0]) || 0;
   } catch(e) { totalRaids = 0; }
@@ -73,7 +73,7 @@ async function syncSignupsToSheet(signups, eventTitle, eventId) {
   try {
     const lastRes = await sheets.spreadsheets.values.get({
       spreadsheetId: sheetId,
-      range: '📋 Roster!J2',
+      range: 'Roster!J2',
     });
     lastEventId = ((lastRes.data.values || [['']])[0][0] || '').toString();
   } catch(e) {}
@@ -136,8 +136,8 @@ async function syncSignupsToSheet(signups, eventTitle, eventId) {
       valueInputOption: 'USER_ENTERED',
       data: [
         { range: STATUS_CELL,     values: [[statusText]]    },
-        { range: '📋 Roster!J1', values: [[totalRaids]]    },
-        { range: '📋 Roster!J2', values: [[eventId || '']] },
+        { range: 'Roster!J1', values: [[totalRaids]]    },
+        { range: 'Roster!J2', values: [[eventId || '']] },
       ],
     },
   });
